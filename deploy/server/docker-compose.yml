@@ -1,0 +1,74 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.4
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - "1G"
+      - --reserve-memory
+      - "0M"
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda:9092
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  broker:
+    build:
+      context: ../..
+      dockerfile: packages/broker/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${BROKER_PORT:-8080}:8080"
+    environment:
+      PORT: "8080"
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: redpanda:9092
+      DAYTONA_API_URL: ${DAYTONA_API_URL}
+      DAYTONA_API_KEY: ${DAYTONA_API_KEY}
+      DAYTONA_TARGET: ${DAYTONA_TARGET:-us}
+      DAYTONA_SNAPSHOT: ${DAYTONA_SNAPSHOT:-}
+      MAX_SANDBOX_CONCURRENCY: ${MAX_SANDBOX_CONCURRENCY:-2}
+      IDLE_POLICY: ${IDLE_POLICY:-stop_keep}
+      DEFAULT_BROKER_MODE: ${DEFAULT_BROKER_MODE:-exclusive}
+      JWT_SECRET: ${JWT_SECRET}
+      DEFAULT_POOL_ID: ${DEFAULT_POOL_ID:-default}
+    depends_on:
+      redis:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis-data:
+  redpanda-data:

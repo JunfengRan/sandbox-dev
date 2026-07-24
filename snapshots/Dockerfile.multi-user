@@ -1,0 +1,20 @@
+# Multi-user sandbox snapshot for scenario 3 experiments
+# Build: docker build --platform linux/amd64 -t sandbox-dev/multi-user:0.1.1 -f snapshots/Dockerfile.multi-user snapshots/
+# Register: scripts/register-multi-user-snapshot.ps1
+
+ARG BASE_IMAGE=sandbox-dev/multi-user:0.1.0
+FROM ${BASE_IMAGE}
+
+USER root
+
+# daytonaio/sandbox already ships sudo; grant passwordless switch to ocuser_* slots.
+RUN for i in $(seq 1 32); do \
+      id=$(printf '%03d' $i); \
+      echo "daytona ALL=(ocuser_${id}) NOPASSWD: ALL"; \
+    done > /etc/sudoers.d/daytona-ocusers && \
+    chmod 440 /etc/sudoers.d/daytona-ocusers
+
+USER daytona
+WORKDIR /home/daytona/project
+
+RUN sudo -u ocuser_001 id -u | grep -q '^1001$'

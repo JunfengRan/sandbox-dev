@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all workspaces
+        run: npm run build
+
+      - name: Verify broker entrypoint exists
+        run: test -f packages/broker/dist/index.js
+
+      - name: Verify plugin entrypoint exists
+        run: test -f packages/opencode-plugin/dist/index.js
+
+  # Integration tests need a live Daytona + Broker stack (Windows/local or self-hosted runner).
+  # Uncomment and configure a self-hosted runner with Docker + Daytona when ready.
+  #
+  # integration:
+  #   name: Scenario tests (self-hosted)
+  #   runs-on: self-hosted
+  #   needs: build
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - run: pwsh -File scripts/run-all-tests.ps1
