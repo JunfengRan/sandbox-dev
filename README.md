@@ -195,8 +195,11 @@ docs/                      # setup, testing
 - `IdlePolicy: pool` 未实现（文档保留；运行时按 `stop_keep`/`delete`）
 - 真 Firecracker 自托管不在本仓库范围
 
+与 Claude Managed Agents 的对齐结论、以及后续演进项见 **[docs/FUTURE-WORK.md](docs/FUTURE-WORK.md)**。
+
 ## 参考
 
+- [docs/FUTURE-WORK.md](docs/FUTURE-WORK.md) — CMA 对齐结论与未来工作
 - [docs/TESTING.md](docs/TESTING.md) — 测试方法、Daytona / E2B-compatible 实测与资源估算
 - [docs/LOAD-CAPACITY.md](docs/LOAD-CAPACITY.md) — 平均态 / 极限态 CPU·内存实测
 - [docs/ELASTIC-SCALING.md](docs/ELASTIC-SCALING.md) — 沙箱弹性规格与进程资源上限
