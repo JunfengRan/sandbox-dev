@@ -26,7 +26,7 @@ export interface TicketRecord {
   sessionId: string
   mode: BrokerMode
   poolId?: string
-  status: 'queued' | 'ready' | 'expired'
+  status: 'queued' | 'ready' | 'expired' | 'claiming'
   queuePosition: number
   sandboxId?: string
   workDir?: string
@@ -35,9 +35,14 @@ export interface TicketRecord {
   createdAt: number
 }
 
-export function buildIsolation(mode: BrokerMode, userId: string, sessionId: string): IsolationInfo {
+export function buildIsolation(
+  mode: BrokerMode,
+  userId: string,
+  sessionId: string,
+  basePath?: string,
+): IsolationInfo {
   const procId = processSessionId(sessionId)
-  const workDir = sessionWorkDir(mode, userId, sessionId)
+  const workDir = sessionWorkDir(mode, userId, sessionId, basePath)
 
   switch (mode) {
     case 'user_shared':
@@ -72,6 +77,22 @@ local current = tonumber(redis.call('GET', key) or '0')
 if current > 0 then
   redis.call('DECR', key)
 end
+return redis.call('GET', key)
+`
+
+/** Atomically claim a queued ticket for processing (queued -> claiming). */
+const CLAIM_TICKET_SCRIPT = `
+local key = KEYS[1]
+local raw = redis.call('GET', key)
+if not raw then
+  return nil
+end
+local ticket = cjson.decode(raw)
+if ticket['status'] ~= 'queued' then
+  return nil
+end
+ticket['status'] = 'claiming'
+redis.call('SET', key, cjson.encode(ticket))
 return redis.call('GET', key)
 `
 
@@ -158,6 +179,13 @@ export class LeaseManager {
 
   async updateTicket(ticket: TicketRecord): Promise<void> {
     await this.redis.set(REDIS_KEYS.ticket(ticket.ticketId), JSON.stringify(ticket))
+  }
+
+  /** Claim ticket for exclusive processing. Returns null if already claimed/ready. */
+  async claimTicket(ticketId: string): Promise<TicketRecord | null> {
+    const raw = await this.redis.eval(CLAIM_TICKET_SCRIPT, 1, REDIS_KEYS.ticket(ticketId))
+    if (!raw || typeof raw !== 'string') return null
+    return JSON.parse(raw) as TicketRecord
   }
 
   async dequeueTicket(): Promise<string | null> {

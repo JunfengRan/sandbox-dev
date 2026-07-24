@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-07-24T17:35:00+08:00",
+  "provider": "daytona",
+  "status": "blocked",
+  "blocker": "Daytona Runner UNRESPONSIVE; sandbox create returns HTTP 502",
+  "planned": {
+    "average": { "users": 4, "opsPerUser": 10, "plannedCpuVcpu": 4, "plannedMemMiB": 4096 },
+    "extreme": { "users": 8, "opsPerUser": 5, "singleOpLockPerUser": true, "plannedCpuVcpu": 8, "plannedMemMiB": 8192 }
+  },
+  "notes": "Re-run scripts/bench-load-resources.ps1 -Provider daytona after runner recovers. Functional scenarios 1-3 previously PASS when runner was healthy."
+}

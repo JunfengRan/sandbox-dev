@@ -5,7 +5,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @sandbox-dev/shared && npm run build -w @sandbox-dev/broker && npm run build -w @sandbox-dev/opencode-plugin",
+    "build": "npm run build -w @sandbox-dev/shared && npm run build -w @sandbox-dev/broker && npm run build -w @sandbox-dev/sandbox-runtime && npm run build -w @sandbox-dev/opencode-plugin",
     "broker:dev": "npm run dev -w @sandbox-dev/broker",
     "broker:start": "npm run start -w @sandbox-dev/broker",
     "plugin:build": "npm run build -w @sandbox-dev/opencode-plugin",

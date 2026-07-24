@@ -2,11 +2,13 @@
 param(
   [string]$BrokerUrl = "http://localhost:8080",
   [string]$PoolId = "default",
+  [ValidateSet('e2b', 'daytona')]
+  [string]$Provider = $(if ($env:SANDBOX_PROVIDER) { $env:SANDBOX_PROVIDER } else { 'e2b' }),
   [switch]$SkipIsolation
 )
 
 $ErrorActionPreference = "Stop"
-$root = Split-Path -Parent $PSScriptRoot
+$env:SANDBOX_PROVIDER = $Provider
 
 function Acquire($userId, $sessionId) {
   $body = @{
@@ -18,7 +20,7 @@ function Acquire($userId, $sessionId) {
   return Invoke-RestMethod "$BrokerUrl/v1/leases/acquire" -Method POST -Body $body -ContentType "application/json"
 }
 
-Write-Host "== Acquire user-a =="
+Write-Host "== Acquire user-a (provider=$Provider) =="
 $a = Acquire "user-a" "session-a"
 Write-Host ($a | ConvertTo-Json -Compress)
 
@@ -46,20 +48,24 @@ if ($a.isolation.linuxUser -eq $b.isolation.linuxUser) {
 $isolationPass = $null
 if (-not $SkipIsolation) {
   Write-Host "`n== OS isolation test =="
-  $envFile = "$env:USERPROFILE\.config\opencode\daytona\.env"
-  if (Test-Path $envFile) {
-    Get-Content $envFile | ForEach-Object {
-      if ($_ -match '^\s*([^#=]+)=(.*)$') {
-        $name = $matches[1].Trim()
-        $value = $matches[2].Trim().Trim('"')
-        Set-Item -Path "env:$name" -Value $value
+  if ($Provider -eq 'daytona') {
+    $envFile = "$env:USERPROFILE\.config\opencode\daytona\.env"
+    if (Test-Path $envFile) {
+      Get-Content $envFile | ForEach-Object {
+        if ($_ -match '^\s*([^#=]+)=(.*)$') {
+          $name = $matches[1].Trim()
+          $value = $matches[2].Trim().Trim('"')
+          Set-Item -Path "env:$name" -Value $value
+        }
       }
     }
+    if (-not $env:DAYTONA_API_URL) { $env:DAYTONA_API_URL = "http://localhost:3000/api" }
+  } else {
+    if (-not $env:E2B_RUNTIME_URL) { $env:E2B_RUNTIME_URL = "http://localhost:8090" }
   }
-  if (-not $env:DAYTONA_API_URL) { $env:DAYTONA_API_URL = "http://localhost:3000/api" }
 
   $isolationScript = Join-Path $PSScriptRoot "test-scenario3-isolation.mjs"
-  node $isolationScript $a.sandboxId $a.isolation.linuxUser $b.isolation.linuxUser $a.workDir
+  node $isolationScript $a.sandboxId $a.isolation.linuxUser $b.isolation.linuxUser $a.workDir $Provider
   $isolationPass = ($LASTEXITCODE -eq 0)
 }
 

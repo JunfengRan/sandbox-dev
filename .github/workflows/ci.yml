@@ -38,6 +38,9 @@ jobs:
       - name: Verify plugin entrypoint exists
         run: test -f packages/opencode-plugin/dist/index.js
 
+      - name: Verify sandbox-runtime entrypoint exists
+        run: test -f packages/sandbox-runtime/dist/index.js
+
   # Integration tests need a live Daytona + Broker stack (Windows/local or self-hosted runner).
   # Uncomment and configure a self-hosted runner with Docker + Daytona when ready.
   #

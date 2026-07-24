@@ -89,6 +89,38 @@ export function createApp(config: Config, broker: BrokerService) {
     }
   })
 
+  app.post('/v1/sandboxes/:id/resize', async (req, res, next) => {
+    try {
+      const body = req.body as { cpu?: number; memoryMiB?: number; diskGiB?: number }
+      if (body.cpu == null || body.memoryMiB == null) {
+        res.status(400).json({ error: 'cpu and memoryMiB required' })
+        return
+      }
+      const result = await broker.resizeSandbox(req.params.id, {
+        cpu: body.cpu,
+        memoryMiB: body.memoryMiB,
+        diskGiB: body.diskGiB,
+      })
+      res.json(result)
+    } catch (err) {
+      next(err)
+    }
+  })
+
+  app.post('/v1/sandboxes/:id/exec', async (req, res, next) => {
+    try {
+      const body = req.body as { command?: string; cwd?: string }
+      if (!body.command) {
+        res.status(400).json({ error: 'command required' })
+        return
+      }
+      const result = await broker.execInSandbox(req.params.id, body.command, body.cwd)
+      res.json(result)
+    } catch (err) {
+      next(err)
+    }
+  })
+
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     console.error(err)
     res.status(500).json({ error: err.message })

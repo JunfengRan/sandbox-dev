@@ -1,0 +1,29 @@
+# Self-hosted E2B-compatible sandbox image (container isolation, not Firecracker).
+# Uses local multi-user base to avoid Docker Hub pulls when offline/proxied.
+# Build: docker build -t sandbox-dev/e2b-runtime:0.1.0 -f snapshots/Dockerfile.e2b-runtime snapshots/
+
+ARG BASE_IMAGE=sandbox-dev/multi-user:0.1.1
+FROM ${BASE_IMAGE}
+
+USER root
+
+# E2B-style primary user + workspace
+RUN (id user >/dev/null 2>&1 || useradd -m -u 2000 -s /bin/bash user) \
+    && mkdir -p /home/user/project \
+    && chown -R user:user /home/user \
+    && echo 'user ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/user-all \
+    && chmod 440 /etc/sudoers.d/user-all \
+    && for i in $(seq 1 32); do \
+         id=$(printf '%03d' $i); \
+         echo "user ALL=(ocuser_${id}) NOPASSWD: ALL"; \
+       done > /etc/sudoers.d/user-ocusers \
+    && chmod 440 /etc/sudoers.d/user-ocusers \
+    && (grep -q 'daytona ALL=(ALL)' /etc/sudoers.d/daytona-all 2>/dev/null || echo 'daytona ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/daytona-all) \
+    && chmod 440 /etc/sudoers.d/daytona-all 2>/dev/null || true
+
+USER user
+WORKDIR /home/user/project
+
+# Override Daytona entrypoint if present — keep container alive for exec API
+ENTRYPOINT []
+CMD ["sleep", "infinity"]

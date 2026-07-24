@@ -1,19 +1,16 @@
 # Scenario 1: concurrency queue test
-# Prerequisites: Daytona running, broker stack up (deploy/local/docker-compose.yml)
-
 param(
   [string]$BrokerUrl = "http://localhost:8080",
-  [string]$DaytonaApiKey = $env:DAYTONA_API_KEY
+  [ValidateSet('e2b', 'daytona')]
+  [string]$Provider = $(if ($env:SANDBOX_PROVIDER) { $env:SANDBOX_PROVIDER } else { 'e2b' })
 )
 
 $ErrorActionPreference = "Stop"
 
-if (-not $DaytonaApiKey) {
-  throw "Set DAYTONA_API_KEY environment variable"
-}
-
-Write-Host "== Broker health =="
+Write-Host "== Broker health (provider hint=$Provider) =="
 Invoke-RestMethod "$BrokerUrl/health"
+$status = Invoke-RestMethod "$BrokerUrl/v1/status"
+Write-Host "active provider=$($status.provider) max=$($status.maxConcurrency)"
 
 function Acquire($userId, $sessionId) {
   $body = @{ userId = $userId; sessionId = $sessionId; mode = "exclusive" } | ConvertTo-Json

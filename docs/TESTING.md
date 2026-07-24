@@ -1,15 +1,25 @@
 # Testing Guide
 
-This document records **how to run validation**, **observed results** (local Daytona v0.190, Windows), and **resource planning estimates** for each Broker mode.
+This document records **how to run validation**, **observed results**, and **resource planning estimates** for each Broker mode and provider (`daytona` | `e2b`).
 
 ## Prerequisites
+
+### E2B-compatible（推荐本地默认）
+
+| Service | Check |
+|---------|-------|
+| sandbox-runtime | `Invoke-RestMethod http://localhost:8090/health` → `ok` |
+| Broker | `Invoke-RestMethod http://localhost:8080/health` → `ok` |
+| Redis / Redpanda | `docker ps` shows `local-redis-1`, `local-redpanda-1` healthy |
+| Image | `sandbox-dev/e2b-runtime:0.1.0`（`.\scripts\build-e2b-image.ps1`） |
+| Broker env | `deploy/local/.env` 中 `SANDBOX_PROVIDER=e2b` |
+
+### Daytona（保留路径）
 
 | Service | Check |
 |---------|-------|
 | Daytona API | `Invoke-RestMethod http://localhost:3000/api/health` → `ok` |
-| Broker | `Invoke-RestMethod http://localhost:8080/health` → `ok` |
-| Redis / Redpanda | `docker ps` shows `local-redis-1`, `local-redpanda-1` healthy |
-| Broker env | `deploy/local/.env` with valid `DAYTONA_API_KEY` |
+| Broker | `SANDBOX_PROVIDER=daytona` + valid `DAYTONA_API_KEY` |
 | Scenario 3 | `DAYTONA_SNAPSHOT=sandbox-dev-multi-user` + snapshot `0.1.1` active |
 
 Reset broker state before a clean run:
@@ -23,36 +33,86 @@ docker exec local-redis-1 redis-cli FLUSHALL
 | Script | Mode | What it validates |
 |--------|------|-------------------|
 | `scripts/test-scenario1-queue.ps1` | `exclusive` | Concurrency cap + Kafka queue + idle dequeue |
-| `scripts/test-scenario2-multi-session.ps1` | `user_shared` | Same sandboxId, different workDir, file isolation |
-| `scripts/test-scenario3-multi-user.ps1` | `multi_user_shared` | Shared pool sandbox, different `ocuser_*`, OS file isolation |
-| `scripts/test-scenario3-isolation.mjs` | — | Low-level sudo / UID isolation probe (called by scenario 3 script) |
-| `scripts/run-all-tests.ps1` | all | End-to-end summary for scenarios 1–3 |
+| `scripts/test-scenario2-multi-session.ps1` | `user_shared` | Same sandboxId, different workDir |
+| `scripts/test-scenario3-multi-user.ps1` | `multi_user_shared` | Shared pool, `ocuser_*`, OS file isolation |
+| `scripts/test-scenario3-isolation.mjs` | — | Provider-aware sudo / UID isolation probe |
+| `scripts/run-all-tests.ps1 -Provider e2b\|daytona` | all | End-to-end summary |
+| `scripts/measure-e2b-resources.ps1` | — | `docker stats` for E2B-compatible sandboxes |
+| `scripts/bench-load-resources.ps1` | exclusive | 平均态 / 极限态 CPU·内存采样 |
+| `scripts/build-e2b-image.ps1` | — | Build `sandbox-dev/e2b-runtime` |
 
-### Run individually
+### Run all (E2B-compatible)
 
 ```powershell
 cd E:\sandbox-dev
-.\scripts\test-scenario1-queue.ps1
-.\scripts\test-scenario2-multi-session.ps1
-.\scripts\test-scenario3-multi-user.ps1
+.\scripts\build-e2b-image.ps1
+cd deploy\local
+docker compose up -d --build
+cd ..\..
+docker exec local-redis-1 redis-cli FLUSHALL
+.\scripts\run-all-tests.ps1 -Provider e2b
+.\scripts\measure-e2b-resources.ps1
 ```
 
-### Run all
+### Run all (Daytona)
 
 ```powershell
-.\scripts\run-all-tests.ps1
+# .env: SANDBOX_PROVIDER=daytona + DAYTONA_API_KEY
+.\scripts\run-all-tests.ps1 -Provider daytona
 ```
 
-### Scenario 3 isolation (manual)
+## Test Results — E2B-compatible (2026-07-24, local Docker)
 
-```powershell
-$env:DAYTONA_API_URL = 'http://localhost:3000/api'
-$env:DAYTONA_API_KEY = '<your-key>'
-node scripts/test-scenario3-isolation.mjs <sandboxId> ocuser_032 ocuser_001 /home/ocuser_032/project/sessions/session-a
-# Expect: HAS_LINUX_USER:yes, ISOLATION_RESULT:DENIED, ISOLATION_PASS:yes
-```
+Environment: Windows 11, Docker Desktop, `SANDBOX_PROVIDER=e2b`, image `sandbox-dev/e2b-runtime:0.1.0`, `MAX_SANDBOX_CONCURRENCY=2`, default limits **0.5 vCPU / 512 MiB** per sandbox.
 
-## Test Results (2026-07-24, local)
+### Scenario 1 — Concurrency queue
+
+| Step | Expected | Result |
+|------|----------|--------|
+| user-a / user-b acquire | `200 granted` | **PASS** |
+| user-c acquire | `202 queued` | **PASS** |
+| user-a idle release → poll user-c | `status=ready` | **PASS** |
+
+### Scenario 2 — Same user, multiple sessions
+
+| Step | Expected | Result |
+|------|----------|--------|
+| Two acquires, same `userId` | Same `sandboxId` | **PASS** |
+| workDir | `/home/user/project/sessions/<sessionId>` | **PASS** |
+| File in session-a, read from session-b dir | NOT_FOUND | **PASS** |
+
+### Scenario 3 — Multi-user carpool
+
+| Step | Expected | Result |
+|------|----------|--------|
+| user-a / user-b same pool | Same `sandboxId` | **PASS** |
+| Linux user mapping | Different `ocuser_XXX` | **PASS** (`ocuser_029` vs `ocuser_019`) |
+| user-b reads user-a secret | DENIED | **PASS** |
+
+**Summary:** Scenario 1–3 all **PASS** on E2B-compatible provider.
+
+### Observed `docker stats` (idle / light write)
+
+| Sample | CPU % | Mem usage / limit |
+|--------|-------|-------------------|
+| exclusive idle | ~0% | **~2.3 MiB / 512 MiB** |
+| exclusive after `dd` 32MiB write | ~0% | **~2.1 MiB / 512 MiB** |
+| user_shared (2 sessions) | ~0% | **~1.8 MiB / 512 MiB** |
+| multi_user_shared (2 users) | ~0% | **~2.2 MiB / 512 MiB** |
+
+> Idle RSS 极低是因为镜像入口为 `sleep infinity`、无语言服务器；**规划容量仍应按 limit + agent 负载**（见下表），不要用 2 MiB 做生产估算。
+
+### Control plane（`deploy/local`，实测）
+
+| Component | Observed RSS | Notes |
+|-----------|--------------|-------|
+| Redis | ~10 MiB | leases / slots |
+| Redpanda | ~240–250 MiB | acquire queue（compose `--memory 512M`） |
+| Broker (Node) | ~40 MiB | API + Kafka consumer |
+| sandbox-runtime | ~24 MiB | dockerode orchestrator |
+| **Subtotal** | **~0.3–0.35 GiB** | 不含 Daytona 平台；比「Daytona + Broker」整栈轻 |
+
+## Test Results — Daytona (2026-07-24, local)
 
 Environment: Windows 11, Docker Desktop, Daytona self-hosted v0.190, Broker on Node 20, `MAX_SANDBOX_CONCURRENCY=2`, snapshot `sandbox-dev-multi-user:0.1.1`.
 
@@ -87,73 +147,60 @@ Environment: Windows 11, Docker Desktop, Daytona self-hosted v0.190, Broker on N
 
 ## Resource Planning
 
-Estimates below use Daytona default snapshot limits (**1 vCPU, 1 GiB RAM, 3 GiB disk** per sandbox) unless overridden. Agent workloads vary widely; treat numbers as **starting points**, not SLAs.
+### Provider defaults
 
-### Per-container / instance (sandbox)
+| Provider | CPU limit / sandbox | Memory limit / sandbox | Isolation |
+|----------|---------------------|------------------------|-----------|
+| Daytona（默认 snapshot） | 1 vCPU | 1 GiB | 容器（Daytona runner） |
+| E2B-compatible（本仓库） | **0.5 vCPU** | **512 MiB** | 容器（dockerode）；非 Firecracker |
 
-| Snapshot | CPU (request) | Memory | Disk | Notes |
-|----------|---------------|--------|------|-------|
-| `daytonaio/sandbox:0.5.0-slim` | 1 vCPU | 1 GiB | 3 GiB | Default; no git |
-| `sandbox-dev-multi-user:0.1.1` | 1 vCPU | 1 GiB | 3 GiB | +32 `ocuser_*` accounts, bubblewrap, sudoers |
-| Recommended (heavy agents) | 2 vCPU | 2 GiB | 5 GiB | npm install, dev servers, parallel tools |
+Observed idle sandbox RSS:
 
-Observed idle sandbox RSS (slim, started): ~150–300 MiB. Under active agent load: 400 MiB–1 GiB+.
+- Daytona slim started: **~150–300 MiB**；active agent: **400 MiB–1 GiB+**
+- E2B-compatible `sleep infinity`: **~2 MiB**；规划仍按 **256–512 MiB** 活动负载预留
 
-### Broker control plane (this repo, `deploy/local`)
+### Mode comparison（规划用）
 
-| Component | Configured / typical | Purpose |
-|-----------|----------------------|---------|
-| Redis | ~50–100 MiB | Lease slots, user/pool mapping |
-| Redpanda | 512 MiB (`--memory 512M`) | Acquire queue |
-| Broker (Node) | ~100–200 MiB | API + Kafka consumer |
-| **Subtotal** | **~0.7–1 GiB** | Fixed overhead regardless of sandbox count |
+| Mode | Daytona CPU/user | Daytona Mem/user | E2B-compatible CPU/user | E2B-compatible Mem/user |
+|------|------------------|------------------|-------------------------|-------------------------|
+| `exclusive` | 1 vCPU | 1 GiB | 0.5 vCPU | 512 MiB |
+| `user_shared`（N sessions） | 1÷N | 1 GiB÷N | 0.5÷N | 512 MiB÷N |
+| `multi_user_shared`（4 人舒适） | ~0.5（建议 2vCPU/2GiB 容器） | ~512 MiB | ~0.25（建议 1vCPU/1GiB 或保持 0.5/512） | ~128–256 MiB |
 
-### Mode comparison
+### E2B-compatible carpool 建议
 
-| Mode | Sandboxes needed | Users per sandbox | Concurrent sessions per sandbox | CPU / user (theoretical*) | Memory / user (theoretical*) |
-|------|------------------|-------------------|---------------------------------|---------------------------|------------------------------|
-| `exclusive` | 1 per session | 1 | 1 | 1 vCPU | 1 GiB |
-| `user_shared` | 1 per `user_id` | 1 user | N sessions (directory isolated) | 1 vCPU ÷ N active sessions | 1 GiB ÷ N active sessions |
-| `multi_user_shared` (carpool) | 1 per pool | up to 32 UID slots† | 2–4 comfortable‡ | 0.25–0.5 vCPU | 256–512 MiB |
+| Pool 活跃用户 | 推荐 CPU limit | 推荐 RAM limit |
+|---------------|---------------|----------------|
+| 1–2 | 0.5–1 vCPU | 512 MiB–1 GiB |
+| 3–4 | 1–2 vCPU | 1–2 GiB |
+| 5+ | 拆 pool 或 `exclusive` | — |
 
-\* Theoretical equal split when all users are CPU/RAM active simultaneously. Linux scheduling and I/O bursts mean real usage is spikier.
-
-† `hashUserToLinuxUser()` maps to `ocuser_001..032`; hash collisions possible.
-
-‡ **Practical carpool concurrency** (semi-trusted internal use):
-
-| Pool size (active users) | Recommended sandbox CPU | Recommended sandbox RAM | Rationale |
-|--------------------------|-------------------------|-------------------------|-----------|
-| 1–2 | 1 vCPU | 1 GiB | Matches defaults; light coding agents |
-| 3–4 | 2 vCPU | 2 GiB | Parallel npm/pip, language servers |
-| 5–8 | 2–4 vCPU | 4 GiB | Diminishing returns; consider second pool sandbox |
-| 9+ | — | — | Not recommended on single container; split pools or use `exclusive` |
-
-### Server capacity example
-
-With `MAX_SANDBOX_CONCURRENCY=10` and **exclusive** mode:
+### 容量示例（E2B-compatible, `MAX_SANDBOX_CONCURRENCY=10`, exclusive）
 
 | Resource | Calculation | Estimate |
 |----------|-------------|----------|
-| Sandbox RAM | 10 × 1 GiB | 10 GiB |
-| Sandbox CPU | 10 × 1 vCPU | 10 vCPU |
-| Broker stack | fixed | ~1 GiB, ~0.5 vCPU |
-| Daytona platform | api + runner + db + … | ~4–6 GiB (local Docker Desktop) |
-| **Headroom (20%)** | | +2–3 GiB |
-| **Total (sandboxes only)** | | **~12 GiB RAM, 11 vCPU** |
+| Sandbox RAM limit | 10 × 512 MiB | 5 GiB |
+| Sandbox CPU limit | 10 × 0.5 | 5 vCPU |
+| Broker + runtime stack | fixed | ~0.35–0.5 GiB |
+| **vs Daytona exclusive×10** | 10 × 1 GiB + Daytona 平台 4–6 GiB | **明显更轻**（无 Daytona 控制面，默认 limit 减半） |
 
-Same host with **one carpool sandbox** and 4 active users (2 vCPU / 2 GiB sandbox):
+Trade-off: E2B-compatible **更轻、全 Docker、无第三方云**，但隔离仍是 **共享内核容器**，不能替代真 microVM。
 
-| Resource | Estimate |
-|----------|----------|
-| Sandbox | 2 vCPU, 2 GiB |
-| Per active user (avg) | ~0.5 vCPU, ~512 MiB |
-| vs 4× exclusive | **~50% RAM/CPU savings** (single kernel, shared base image) |
+## 平均态 / 极限态负载（2026-07-24）
 
-Trade-off: carpool saves resources but **does not** provide VM-level tenant isolation.
+详见 **[LOAD-CAPACITY.md](LOAD-CAPACITY.md)** 与 **[ELASTIC-SCALING.md](ELASTIC-SCALING.md)**。
+
+| Provider | 平均态 4×10 rw | 极限态 | 规划要点 |
+|----------|----------------|--------|----------|
+| E2B-compatible | PASS（峰值 CPU 27%、RSS 13 MiB） | PASS（16 用户，CPU 29%、RSS 20 MiB） | limit **0.5×N / 512×N MiB** |
+| Daytona | **BLOCKED**（Runner 502） | **BLOCKED** | 规划 **1×N vCPU / N GiB**；待 Runner 恢复补测 |
 
 ## CI vs local integration tests
 
-GitHub Actions runs **build + typecheck only** (no Daytona/Docker integration). Full scenario tests require a running Daytona stack — run locally with the scripts above.
+GitHub Actions runs **build + typecheck only**（含 `sandbox-runtime`）。Full scenario tests require Docker locally:
+
+```powershell
+.\scripts\run-all-tests.ps1 -Provider e2b
+```
 
 See [`.github/workflows/ci.yml`](../.github/workflows/ci.yml).

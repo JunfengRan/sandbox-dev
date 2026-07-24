@@ -1,0 +1,94 @@
+﻿{
+    "timestamp":  "2026-07-24T17:07:54.9850809+08:00",
+    "provider":  "e2b",
+    "maxConcurrency":  16,
+    "average":  {
+                    "users":  4,
+                    "opsPerUser":  10,
+                    "durationSec":  17.3,
+                    "peakSandboxCpuPct":  27.12,
+                    "peakSandboxMemMiB":  13.17,
+                    "peakControlPlaneCpuPct":  3.73,
+                    "peakControlPlaneMemMiB":  308.41,
+                    "perUserPeakCpuPct":  6.78,
+                    "perUserPeakMemMiB":  3.29,
+                    "plannedCpuVcpu":  2,
+                    "plannedMemMiB":  2048,
+                    "finalSandboxSamples":  [
+                                                {
+                                                    "Name":  "sandbox-dev-sbx_c22fa22852444705",
+                                                    "CpuPct":  0,
+                                                    "MemMiB":  1.7,
+                                                    "RawMem":  "1.703MiB / 512MiB",
+                                                    "RawCpu":  "0.00%"
+                                                },
+                                                {
+                                                    "Name":  "sandbox-dev-sbx_d5632db44a1b4e49",
+                                                    "CpuPct":  0,
+                                                    "MemMiB":  0.83,
+                                                    "RawMem":  "852KiB / 512MiB",
+                                                    "RawCpu":  "0.00%"
+                                                },
+                                                {
+                                                    "Name":  "sandbox-dev-sbx_712dd3dacfb34f18",
+                                                    "CpuPct":  0,
+                                                    "MemMiB":  1.73,
+                                                    "RawMem":  "1.727MiB / 512MiB",
+                                                    "RawCpu":  "0.00%"
+                                                },
+                                                {
+                                                    "Name":  "sandbox-dev-sbx_a1f906a33a9142b6",
+                                                    "CpuPct":  0,
+                                                    "MemMiB":  1.01,
+                                                    "RawMem":  "1.008MiB / 512MiB",
+                                                    "RawCpu":  "0.00%"
+                                                }
+                                            ],
+                    "finalControlPlane":  [
+                                              {
+                                                  "Name":  "local-broker-1",
+                                                  "CpuPct":  3.45,
+                                                  "MemMiB":  34.45,
+                                                  "RawMem":  "34.45MiB / 15.43GiB",
+                                                  "RawCpu":  "3.45%"
+                                              },
+                                              {
+                                                  "Name":  "local-sandbox-runtime-1",
+                                                  "CpuPct":  0.01,
+                                                  "MemMiB":  28.13,
+                                                  "RawMem":  "28.13MiB / 15.43GiB",
+                                                  "RawCpu":  "0.01%"
+                                              },
+                                              {
+                                                  "Name":  "local-redis-1",
+                                                  "CpuPct":  0.3,
+                                                  "MemMiB":  9.48,
+                                                  "RawMem":  "9.477MiB / 15.43GiB",
+                                                  "RawCpu":  "0.30%"
+                                              },
+                                              {
+                                                  "Name":  "local-redpanda-1",
+                                                  "CpuPct":  0.26,
+                                                  "MemMiB":  240.8,
+                                                  "RawMem":  "240.8MiB / 15.43GiB",
+                                                  "RawCpu":  "0.26%"
+                                              }
+                                          ]
+                },
+    "extreme":  {
+                    "requestedUsers":  16,
+                    "concurrentSandboxes":  16,
+                    "queuedUsers":  0,
+                    "opsPerUser":  5,
+                    "singleOpLockPerUser":  true,
+                    "durationSec":  42.62,
+                    "peakSandboxCpuPct":  29.39,
+                    "peakSandboxMemMiB":  19.75,
+                    "peakControlPlaneCpuPct":  18.28,
+                    "peakControlPlaneMemMiB":  325.17,
+                    "perUserPeakCpuPct":  1.84,
+                    "perUserPeakMemMiB":  1.23,
+                    "plannedCpuVcpu":  8,
+                    "plannedMemMiB":  8192
+                }
+}

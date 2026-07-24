@@ -38,6 +38,34 @@ services:
       timeout: 5s
       retries: 10
 
+  sandbox-runtime:
+    build:
+      context: ../..
+      dockerfile: packages/sandbox-runtime/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${RUNTIME_PORT:-8090}:8090"
+    environment:
+      PORT: "8090"
+      E2B_IMAGE: ${E2B_IMAGE:-sandbox-dev/e2b-runtime:0.1.0}
+      E2B_DEFAULT_CPU: ${E2B_DEFAULT_CPU:-0.5}
+      E2B_DEFAULT_MEMORY_MIB: ${E2B_DEFAULT_MEMORY_MIB:-512}
+      E2B_WORK_DIR: ${E2B_WORK_DIR:-/home/user/project}
+      DOCKER_SOCKET: /var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8090/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   broker:
     build:
       context: ../..
@@ -49,20 +77,30 @@ services:
       PORT: "8080"
       REDIS_URL: redis://redis:6379
       KAFKA_BROKERS: redpanda:9092
-      DAYTONA_API_URL: ${DAYTONA_API_URL}
-      DAYTONA_API_KEY: ${DAYTONA_API_KEY}
+      SANDBOX_PROVIDER: ${SANDBOX_PROVIDER:-e2b}
+      DAYTONA_API_URL: ${DAYTONA_API_URL:-}
+      DAYTONA_API_KEY: ${DAYTONA_API_KEY:-}
       DAYTONA_TARGET: ${DAYTONA_TARGET:-us}
       DAYTONA_SNAPSHOT: ${DAYTONA_SNAPSHOT:-}
+      E2B_RUNTIME_URL: ${E2B_RUNTIME_URL:-http://sandbox-runtime:8090}
+      E2B_IMAGE: ${E2B_IMAGE:-sandbox-dev/e2b-runtime:0.1.0}
+      E2B_DEFAULT_CPU: ${E2B_DEFAULT_CPU:-0.5}
+      E2B_DEFAULT_MEMORY_MIB: ${E2B_DEFAULT_MEMORY_MIB:-512}
+      E2B_WORK_DIR: ${E2B_WORK_DIR:-/home/user/project}
       MAX_SANDBOX_CONCURRENCY: ${MAX_SANDBOX_CONCURRENCY:-2}
       IDLE_POLICY: ${IDLE_POLICY:-stop_keep}
       DEFAULT_BROKER_MODE: ${DEFAULT_BROKER_MODE:-exclusive}
       JWT_SECRET: ${JWT_SECRET}
       DEFAULT_POOL_ID: ${DEFAULT_POOL_ID:-default}
+      LEASE_TTL_MS: ${LEASE_TTL_MS:-120000}
+      LEASE_SWEEP_INTERVAL_MS: ${LEASE_SWEEP_INTERVAL_MS:-30000}
     depends_on:
       redis:
         condition: service_healthy
       redpanda:
         condition: service_healthy
+      sandbox-runtime:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
       interval: 15s

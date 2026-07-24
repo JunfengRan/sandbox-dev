@@ -28,6 +28,7 @@ export class BrokerClient {
         return {
           status: 'granted',
           sandboxId: data.sandboxId,
+          provider: data.provider,
           workDir: data.workDir,
           processSessionId: data.processSessionId,
           isolation: data.isolation,
