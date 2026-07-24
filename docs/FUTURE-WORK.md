@@ -34,6 +34,7 @@
 - E2B 路径为容器兼容 API，非 Firecracker 多租户边界
 - `multi_user_shared` 为实验（`ocuser_*` hash 碰撞风险）
 - `IdlePolicy: pool` 未实现
+- Hands 为 Linux 容器：无 Windows API / GUI；无端口预览转发一等能力（见 [WINDOWS-CAPABILITY-BOUNDARIES](WINDOWS-CAPABILITY-BOUNDARIES.md)）
 
 参考文档：
 

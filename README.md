@@ -185,7 +185,7 @@ deploy/local/              # 本地 Compose（redis/redpanda/runtime/broker）
 deploy/server/             # 服务器 Compose
 snapshots/                 # e2b-runtime / multi-user 镜像
 scripts/                   # 场景测试与资源采样
-docs/                      # setup, testing
+docs/                      # setup, testing, Windows capability boundaries
 ```
 
 ## 已知限制
@@ -194,12 +194,14 @@ docs/                      # setup, testing
 - 场景 3 `ocuser_*` 仅 32 槽，存在 hash 碰撞风险；生产默认 `exclusive`
 - `IdlePolicy: pool` 未实现（文档保留；运行时按 `stop_keep`/`delete`）
 - 真 Firecracker 自托管不在本仓库范围
+- **Windows 操作边界**：沙箱为 Linux 容器，无 pywin32/COM/注册表/Windows GUI；宿主浏览器不能直连沙箱端口（需转发，本仓未封装）——详见 **[docs/WINDOWS-CAPABILITY-BOUNDARIES.md](docs/WINDOWS-CAPABILITY-BOUNDARIES.md)**
 
 与 Claude Managed Agents 的对齐结论、以及后续演进项见 **[docs/FUTURE-WORK.md](docs/FUTURE-WORK.md)**。
 
 ## 参考
 
 - [docs/FUTURE-WORK.md](docs/FUTURE-WORK.md) — CMA 对齐结论与未来工作
+- [docs/WINDOWS-CAPABILITY-BOUNDARIES.md](docs/WINDOWS-CAPABILITY-BOUNDARIES.md) — Windows 操作 / 端口 / GUI 能力边界
 - [docs/TESTING.md](docs/TESTING.md) — 测试方法、Daytona / E2B-compatible 实测与资源估算
 - [docs/LOAD-CAPACITY.md](docs/LOAD-CAPACITY.md) — 平均态 / 极限态 CPU·内存实测
 - [docs/ELASTIC-SCALING.md](docs/ELASTIC-SCALING.md) — 沙箱弹性规格与进程资源上限

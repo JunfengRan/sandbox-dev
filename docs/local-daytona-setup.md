@@ -324,6 +324,9 @@ node -e "import {Daytona} from '@daytona/sdk'; const d=new Daytona({apiKey:proce
 
 ## 6. Known issues
 
+> Windows **沙箱能力**（pywin32、宿主浏览器直连端口、GUI 等）的完整边界见  
+> [WINDOWS-CAPABILITY-BOUNDARIES.md](WINDOWS-CAPABILITY-BOUNDARIES.md)。下文仅列本机联调常见故障。
+
 ### Toolbox: `proxy.localhost` on Windows
 
 **Fix** in `E:\daytona\docker\docker-compose.yaml`:
