@@ -2,7 +2,7 @@
  * Provider-agnostic OS isolation probe for scenario 3.
  * Usage:
  *   node scripts/test-scenario3-isolation.mjs <sandboxId> <linuxUserA> <linuxUserB> <dirA> [provider]
- * provider: daytona | e2b (default from SANDBOX_PROVIDER or e2b)
+ * provider: daytona | e2b | aio (default from SANDBOX_PROVIDER or e2b)
  */
 import { Daytona } from '@daytona/sdk'
 

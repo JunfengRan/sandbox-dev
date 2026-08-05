@@ -5,7 +5,7 @@ export type IdlePolicy = 'stop_keep' | 'delete' | 'pool'
 export type LeaseStatus = 'active' | 'queued' | 'released' | 'ready'
 
 /** Control-plane compute backend (Hands layer). */
-export type SandboxProviderName = 'daytona' | 'e2b'
+export type SandboxProviderName = 'daytona' | 'e2b' | 'aio'
 
 export interface AcquireRequest {
   userId: string
@@ -185,6 +185,7 @@ export const KAFKA_TOPIC_ACQUIRE = 'sandbox-acquire-requests'
 export const PROJECT_BASE_PATH: Record<SandboxProviderName, string> = {
   daytona: '/home/daytona/project',
   e2b: '/home/user/project',
+  aio: '/home/gem/workspace',
 }
 
 export const REDIS_KEYS = {

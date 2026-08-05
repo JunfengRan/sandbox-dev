@@ -10,9 +10,11 @@ import { logger, setLogFilePath } from './logger.js'
 const xdgDataDir = xdgData ?? join(homedir(), '.local', 'share')
 const LOG_FILE = join(xdgDataDir, 'opencode', 'log', 'daytona-broker.log')
 const REPO_PATH =
-  process.env.SANDBOX_PROVIDER === 'e2b' || process.env.E2B_RUNTIME_URL
-    ? (process.env.E2B_WORK_DIR ?? '/home/user/project')
-    : '/home/daytona/project'
+  process.env.SANDBOX_PROVIDER === 'aio' || process.env.AIO_WORK_DIR
+    ? (process.env.AIO_WORK_DIR ?? '/home/gem/workspace')
+    : process.env.SANDBOX_PROVIDER === 'e2b' || process.env.E2B_RUNTIME_URL
+      ? (process.env.E2B_WORK_DIR ?? '/home/user/project')
+      : '/home/daytona/project'
 
 setLogFilePath(LOG_FILE)
 

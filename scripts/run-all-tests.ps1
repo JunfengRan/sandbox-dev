@@ -1,6 +1,6 @@
 # Consolidated test runner for all 3 scenarios (provider-aware)
 param(
-  [ValidateSet('e2b', 'daytona')]
+  [ValidateSet('e2b', 'daytona', 'aio')]
   [string]$Provider = $(if ($env:SANDBOX_PROVIDER) { $env:SANDBOX_PROVIDER } else { 'e2b' }),
   [string]$BrokerUrl = "http://localhost:8080",
   [string]$RuntimeUrl = $(if ($env:E2B_RUNTIME_URL) { $env:E2B_RUNTIME_URL } else { 'http://localhost:8090' })
@@ -24,7 +24,7 @@ function Release($userId, $sessionId) {
 }
 
 function ExecInSandbox($sandboxId, $command) {
-  if ($Provider -eq 'e2b') {
+  if ($Provider -eq 'e2b' -or $Provider -eq 'aio') {
     $payload = @{ command = $command } | ConvertTo-Json
     $res = Invoke-RestMethod -Uri "$RuntimeUrl/v1/sandboxes/$sandboxId/exec" -Method POST -Body $payload -ContentType "application/json"
     return "$($res.stdout)$($res.stderr)"
@@ -43,7 +43,10 @@ const { Daytona } = require('@daytona/sdk');
 
 Write-Host "Provider=$Provider BrokerUrl=$BrokerUrl"
 $status = Invoke-RestMethod "$BrokerUrl/v1/status"
-Write-Host "Broker status provider=$($status.provider) active=$($status.activeCount)"
+Write-Host "Broker status provider=$($status.provider) active=$($status.activeCount) queue=$($status.queueLength)"
+if ($status.activeCount -gt 0 -or $status.queueLength -gt 0) {
+  Write-Warning "Broker not idle (active=$($status.activeCount) queue=$($status.queueLength)). Flush Redis and restart broker before a clean run."
+}
 
 Write-Host "`n========== SCENARIO 1: Concurrency Queue =========="
 $r1 = Acquire "s1-user-a" "s1-session-1" "exclusive"
@@ -53,12 +56,19 @@ Write-Host "A: $($r1.StatusCode) status=$($r1.Data.status) provider=$($r1.Data.p
 Write-Host "B: $($r2.StatusCode) status=$($r2.Data.status)"
 Write-Host "C: $($r3.StatusCode) status=$($r3.Data.status)"
 $s1ok = ($r1.Data.status -eq 'granted') -and ($r2.Data.status -eq 'granted') -and ($r3.Data.status -eq 'queued')
+Write-Host "SCENARIO 1 acquire gate: $(if($s1ok){'PASS'}else{'FAIL'}) (A/B granted, C queued)"
 Release "s1-user-a" "s1-session-1"
-Start-Sleep -Seconds 3
+# AIO container boot + ready probe is slow; poll longer than e2b/daytona.
+$dequeueWaitSec = if ($Provider -eq 'aio') { 120 } else { 15 }
+$pollReady = $false
 if ($r3.Data.ticketId) {
-  $poll = Invoke-RestMethod "$BrokerUrl/v1/leases/poll?ticketId=$($r3.Data.ticketId)"
-  Write-Host "C after release: status=$($poll.status) sandbox=$($poll.sandboxId)"
-  $s1ok = $s1ok -and ($poll.status -eq 'ready')
+  for ($i = 0; $i -lt [math]::Ceiling($dequeueWaitSec / 3); $i++) {
+    Start-Sleep -Seconds 3
+    $poll = Invoke-RestMethod "$BrokerUrl/v1/leases/poll?ticketId=$($r3.Data.ticketId)"
+    Write-Host "C poll $($i+1): status=$($poll.status) sandbox=$($poll.sandboxId)"
+    if ($poll.status -eq 'ready') { $pollReady = $true; break }
+  }
+  $s1ok = $s1ok -and $pollReady
 }
 Write-Host "SCENARIO 1 RESULT: $(if($s1ok){'PASS'}else{'FAIL'})"
 Release "s1-user-b" "s1-session-2"

@@ -1,0 +1,36 @@
+# Multi-user AIO sandbox image for Broker Hands (shell/file + ocuser_* isolation).
+# Build: .\scripts\build-aio-image.ps1
+#
+# AIO entrypoint creates user gem with UID/GID 1000 — do NOT occupy 1000 with ocuser_*.
+# Mainland China mirror example:
+#   --build-arg BASE_IMAGE=enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:1.11.0
+
+ARG BASE_IMAGE=ghcr.io/agent-infra/sandbox:1.11.0
+FROM ${BASE_IMAGE}
+
+USER root
+
+# Pre-create gem@1000 so AIO init will not fail, then ocuser_001@1001 .. ocuser_032@1032.
+RUN set -eux; \
+    if ! getent group gem >/dev/null; then groupadd -g 1000 gem; fi; \
+    if ! id gem >/dev/null 2>&1; then useradd -m -u 1000 -g 1000 -s /bin/bash gem; fi; \
+    mkdir -p /home/gem/workspace; \
+    chown -R gem:gem /home/gem; \
+    for i in $(seq 1 32); do \
+      id=$(printf '%03d' $i); \
+      uid=$((1000 + i)); \
+      if ! id "ocuser_${id}" >/dev/null 2>&1; then \
+        useradd -m -u ${uid} -s /bin/bash "ocuser_${id}"; \
+      fi; \
+      mkdir -p "/home/ocuser_${id}/project/sessions"; \
+      chown -R "ocuser_${id}:ocuser_${id}" "/home/ocuser_${id}"; \
+    done; \
+    for i in $(seq 1 32); do \
+      id=$(printf '%03d' $i); \
+      echo "gem ALL=(ocuser_${id}) NOPASSWD: ALL"; \
+    done > /etc/sudoers.d/aio-ocusers; \
+    echo 'gem ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers.d/aio-ocusers; \
+    echo 'root ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/aio-root-all; \
+    chmod 440 /etc/sudoers.d/aio-ocusers /etc/sudoers.d/aio-root-all
+
+# Keep base image ENTRYPOINT/CMD (AIO supervisor). Do not override with sleep infinity.

@@ -6,7 +6,12 @@ export function createRuntimeApp(manager: DockerSandboxManager) {
   app.use(express.json({ limit: '10mb' }))
 
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', runtime: 'e2b-compatible' })
+    const backend = manager.getBackend()
+    res.json({
+      status: 'ok',
+      runtime: backend === 'aio' ? 'aio' : 'e2b-compatible',
+      backend,
+    })
   })
 
   app.post('/v1/sandboxes', async (req, res, next) => {

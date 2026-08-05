@@ -1,4 +1,4 @@
-# Sandbox Broker — Hands / 控制面（Daytona + 自托管 E2B-compatible）
+# Sandbox Broker — Hands / 控制面（Daytona + 自托管 E2B-compatible + AIO）
 
 本仓库在 **Agent Harness（Brain）** 与 **隔离执行环境（Hands）** 之间提供 **Sandbox Broker** 控制面，目标对齐：
 
@@ -14,6 +14,7 @@
 |--------------------|------|------|------|
 | `daytona`（保留） | Docker 容器（Daytona） | 需本地/远端 Daytona API | 原有路径，功能完整 |
 | `e2b`（默认 local） | Docker 容器（E2B-compatible API） | `sandbox-runtime` + docker.sock | **自托管**，不依赖 E2B Cloud；**不是** Firecracker microVM |
+| `aio` | Docker 容器（[agent-infra AIO](https://github.com/agent-infra/sandbox)） | `sandbox-runtime`（`RUNTIME_BACKEND=aio`）+ docker.sock | 按租约起 AIO 镜像；Hands 用 `/v1/shell` + `/v1/file`；首版不接 Browser/MCP |
 
 > 真 Firecracker / 官方 `e2b-dev/infra` 需要 Linux + KVM，无法在 Windows Docker Desktop 上作为本仓库默认路径。本实现用 **E2B 风格 HTTP API**（create/exec/files/stop/kill）+ 更小默认规格（0.5 vCPU / 512 MiB）做轻量对照。
 
@@ -26,10 +27,11 @@ OpenCode / 上游 Agent (Brain)
 Sandbox Broker (:8080) ── Redis + Kafka
     │  SandboxProvider
     ├─ daytona → Daytona API (:3000) → Runner → Linux Sandbox
-    └─ e2b     → sandbox-runtime (:8090) → Docker Engine → Linux Sandbox
+    ├─ e2b     → sandbox-runtime (:8090) → Docker Engine → Linux Sandbox
+    └─ aio     → sandbox-runtime (:8090, RUNTIME_BACKEND=aio) → AIO 容器 (:8080 HTTP)
 ```
 
-场景能力（两种 provider 均支持）：
+场景能力（三种 provider 均支持）：
 
 1. **场景 1**：服务器沙箱并发上限 + Redis 槽位 + Kafka 排队，`session.idle` 释放槽位  
 2. **场景 2**：同一用户多个 OpenCode session 共享一个 sandbox（目录隔离）  
@@ -67,6 +69,25 @@ docker exec local-redis-1 redis-cli FLUSHALL
 ```
 
 完整结果与 CPU/内存估算见 **[docs/TESTING.md](docs/TESTING.md)**。
+
+## 快速开始（AIO / agent-infra）
+
+```powershell
+cd E:\sandbox-dev
+.\scripts\build-aio-image.ps1
+# 若 GHCR 拉不动，可设国内 mirror：
+# $env:AIO_BASE_IMAGE='enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:1.11.0'
+# .\scripts\build-aio-image.ps1
+
+cd deploy\local
+# .env: SANDBOX_PROVIDER=aio, RUNTIME_BACKEND=aio, SANDBOX_CPU=1, SANDBOX_MEMORY_MIB=2048
+docker compose up -d --build
+cd ..\..
+docker exec local-redis-1 redis-cli FLUSHALL
+.\scripts\run-all-tests.ps1 -Provider aio
+```
+
+设计与实现计划见 `docs/superpowers/specs/2026-08-05-aio-sandbox-provider-design.md`。
 
 ## 快速开始（Daytona，保留）
 
@@ -132,12 +153,23 @@ DAYTONA_BROKER_MODE=exclusive
 
 空闲 sandbox RSS ≈ **2 MiB**（`sleep infinity`）；规划仍按 **0.5 vCPU / 512 MiB** limit。控制面实测 ≈ **0.3–0.35 GiB**（Redis+Redpanda+Broker+runtime）。
 
+### AIO / agent-infra（2026-08-05 实测）
+
+| 场景 | API | OS/目录隔离 |
+|------|-----|-------------|
+| 1 并发排队 | **PASS** | — |
+| 2 同用户多 session | **PASS** | **PASS** |
+| 3 跨用户拼车 | **PASS** | **PASS** |
+
+基于完整 AIO 镜像（`all-in-one-sandbox:1.11.0` + 多用户派生层）；默认 **1 vCPU / 2048 MiB**；Hands 路径经 HTTP `/v1/shell` + `/v1/file`。
+
 ### 资源估算对照（默认规格）
 
 | Provider | 默认每 sandbox | exclusive 每用户 | multi_user 4 人拼车（建议） |
 |----------|----------------|------------------|-----------------------------|
 | Daytona | 1 vCPU / 1 GiB | 1 vCPU / 1 GiB | ~0.5 vCPU / ~512 MiB（2vCPU/2GiB 容器） |
 | E2B-compatible | 0.5 vCPU / 512 MiB | 0.5 vCPU / 512 MiB | ~0.25 vCPU / ~256 MiB（同容器均分） |
+| AIO | 1 vCPU / 2 GiB | 1 vCPU / 2 GiB | ~0.5 vCPU / ~1 GiB（建议，镜像较重） |
 
 Broker 控制面（Redis + Redpanda + Node + runtime）：约 **0.3–0.35 GiB**（负载峰值可达 ~0.4 GiB）。
 

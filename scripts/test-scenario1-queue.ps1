@@ -1,7 +1,7 @@
 # Scenario 1: concurrency queue test
 param(
   [string]$BrokerUrl = "http://localhost:8080",
-  [ValidateSet('e2b', 'daytona')]
+  [ValidateSet('e2b', 'daytona', 'aio')]
   [string]$Provider = $(if ($env:SANDBOX_PROVIDER) { $env:SANDBOX_PROVIDER } else { 'e2b' })
 )
 

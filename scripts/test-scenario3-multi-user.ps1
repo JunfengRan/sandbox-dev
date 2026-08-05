@@ -3,6 +3,7 @@ param(
   [string]$BrokerUrl = "http://localhost:8080",
   [string]$PoolId = "default",
   [ValidateSet('e2b', 'daytona')]
+  [ValidateSet('e2b', 'daytona', 'aio')]
   [string]$Provider = $(if ($env:SANDBOX_PROVIDER) { $env:SANDBOX_PROVIDER } else { 'e2b' }),
   [switch]$SkipIsolation
 )

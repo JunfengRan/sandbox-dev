@@ -71,8 +71,13 @@ export class BrokerSessionManager {
     logger.info(`Reconnecting sandboxId=${acquired.sandboxId} provider=${provider}`)
 
     const handle =
-      provider === 'e2b'
-        ? E2BSandboxHandle.connect(acquired.sandboxId)
+      provider === 'e2b' || provider === 'aio'
+        ? E2BSandboxHandle.connect(
+            acquired.sandboxId,
+            provider === 'aio'
+              ? (process.env.AIO_RUNTIME_URL ?? process.env.E2B_RUNTIME_URL)
+              : process.env.E2B_RUNTIME_URL,
+          )
         : await this.connectDaytona(acquired.sandboxId)
 
     await handle.start()
@@ -147,5 +152,7 @@ export class BrokerSessionManager {
 }
 
 function resolvePreferredProvider(): SandboxProviderName {
-  return process.env.SANDBOX_PROVIDER === 'e2b' ? 'e2b' : 'daytona'
+  const p = process.env.SANDBOX_PROVIDER
+  if (p === 'e2b' || p === 'aio' || p === 'daytona') return p
+  return 'daytona'
 }

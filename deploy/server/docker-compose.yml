@@ -47,13 +47,22 @@ services:
       - "${RUNTIME_PORT:-8090}:8090"
     environment:
       PORT: "8090"
+      RUNTIME_BACKEND: ${RUNTIME_BACKEND:-e2b}
       E2B_IMAGE: ${E2B_IMAGE:-sandbox-dev/e2b-runtime:0.1.0}
       E2B_DEFAULT_CPU: ${E2B_DEFAULT_CPU:-0.5}
       E2B_DEFAULT_MEMORY_MIB: ${E2B_DEFAULT_MEMORY_MIB:-512}
       E2B_WORK_DIR: ${E2B_WORK_DIR:-/home/user/project}
+      AIO_IMAGE: ${AIO_IMAGE:-sandbox-dev/aio-runtime:0.1.0}
+      AIO_WORK_DIR: ${AIO_WORK_DIR:-/home/gem/workspace}
+      AIO_API_KEY: ${AIO_API_KEY:-}
+      AIO_READY_TIMEOUT_MS: ${AIO_READY_TIMEOUT_MS:-120000}
+      AIO_DOCKER_NETWORK: ${AIO_DOCKER_NETWORK:-sandbox-dev-aio}
       DOCKER_SOCKET: /var/run/docker.sock
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - default
+      - aio
     healthcheck:
       test:
         [
@@ -87,6 +96,9 @@ services:
       E2B_DEFAULT_CPU: ${E2B_DEFAULT_CPU:-0.5}
       E2B_DEFAULT_MEMORY_MIB: ${E2B_DEFAULT_MEMORY_MIB:-512}
       E2B_WORK_DIR: ${E2B_WORK_DIR:-/home/user/project}
+      AIO_RUNTIME_URL: ${AIO_RUNTIME_URL:-http://sandbox-runtime:8090}
+      AIO_IMAGE: ${AIO_IMAGE:-sandbox-dev/aio-runtime:0.1.0}
+      AIO_WORK_DIR: ${AIO_WORK_DIR:-/home/gem/workspace}
       MAX_SANDBOX_CONCURRENCY: ${MAX_SANDBOX_CONCURRENCY:-2}
       IDLE_POLICY: ${IDLE_POLICY:-stop_keep}
       DEFAULT_BROKER_MODE: ${DEFAULT_BROKER_MODE:-exclusive}
@@ -106,6 +118,11 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+
+networks:
+  aio:
+    name: sandbox-dev-aio
+    driver: bridge
 
 volumes:
   redis-data:

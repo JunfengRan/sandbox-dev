@@ -274,9 +274,20 @@ export class BrokerService {
       (sizeProfile && sizeProfile !== 'custom' ? { ...SIZE_PROFILES[sizeProfile] } : this.config.defaultResources)
 
     if (sandboxId) {
-      await this.provider.get(sandboxId)
-      await this.provider.start(sandboxId)
-    } else {
+      try {
+        await this.provider.get(sandboxId)
+        await this.provider.start(sandboxId)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.warn(`Reuse sandbox ${sandboxId} failed (${msg}); creating a new one`)
+        sandboxId = null
+        await this.leases.clearSessionSandbox(userId, sessionId)
+        if (mode === 'user_shared') await this.leases.clearUserSandbox(userId)
+        if (mode === 'multi_user_shared') await this.leases.clearPoolSandbox(poolId)
+      }
+    }
+
+    if (!sandboxId) {
       const labels: Record<string, string> = { mode, userId, provider: this.provider.name }
       if (poolId) labels.poolId = poolId
       const sandbox = await this.provider.create(labels, resources)

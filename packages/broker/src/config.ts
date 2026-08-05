@@ -22,6 +22,9 @@ export interface Config {
   e2bCpu: number
   e2bMemoryMiB: number
   e2bWorkDir: string
+  aioRuntimeUrl: string
+  aioImage: string
+  aioWorkDir: string
   maxConcurrency: number
   idlePolicy: IdlePolicy
   defaultMode: BrokerMode
@@ -94,6 +97,10 @@ export function loadConfig(): Config {
     e2bCpu: resources.cpu,
     e2bMemoryMiB: resources.memoryMiB,
     e2bWorkDir: process.env.E2B_WORK_DIR ?? PROJECT_BASE_PATH.e2b,
+    aioRuntimeUrl:
+      process.env.AIO_RUNTIME_URL ?? process.env.E2B_RUNTIME_URL ?? 'http://localhost:8090',
+    aioImage: process.env.AIO_IMAGE ?? 'sandbox-dev/aio-runtime:0.1.0',
+    aioWorkDir: process.env.AIO_WORK_DIR ?? PROJECT_BASE_PATH.aio,
     maxConcurrency: Number(process.env.MAX_SANDBOX_CONCURRENCY ?? 2),
     idlePolicy: (process.env.IDLE_POLICY ?? 'stop_keep') as IdlePolicy,
     defaultMode: (process.env.DEFAULT_BROKER_MODE ?? 'exclusive') as BrokerMode,

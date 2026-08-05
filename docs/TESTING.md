@@ -1,6 +1,6 @@
 # Testing Guide
 
-This document records **how to run validation**, **observed results**, and **resource planning estimates** for each Broker mode and provider (`daytona` | `e2b`).
+This document records **how to run validation**, **observed results**, and **resource planning estimates** for each Broker mode and provider (`daytona` | `e2b` | `aio`).
 
 ## Prerequisites
 
@@ -22,6 +22,15 @@ This document records **how to run validation**, **observed results**, and **res
 | Broker | `SANDBOX_PROVIDER=daytona` + valid `DAYTONA_API_KEY` |
 | Scenario 3 | `DAYTONA_SNAPSHOT=sandbox-dev-multi-user` + snapshot `0.1.1` active |
 
+### AIO（agent-infra）
+
+| Service | Check |
+|---------|-------|
+| Image | `sandbox-dev/aio-runtime:0.1.0`（`.\scripts\build-aio-image.ps1`） |
+| sandbox-runtime | `RUNTIME_BACKEND=aio`；`Invoke-RestMethod http://localhost:8090/health` → `backend=aio` |
+| Broker | `SANDBOX_PROVIDER=aio`；建议 `SANDBOX_CPU=1` / `SANDBOX_MEMORY_MIB=2048` |
+| Network | compose 网络 `sandbox-dev-aio`（runtime 与 AIO 容器互通） |
+
 Reset broker state before a clean run:
 
 ```powershell
@@ -36,10 +45,11 @@ docker exec local-redis-1 redis-cli FLUSHALL
 | `scripts/test-scenario2-multi-session.ps1` | `user_shared` | Same sandboxId, different workDir |
 | `scripts/test-scenario3-multi-user.ps1` | `multi_user_shared` | Shared pool, `ocuser_*`, OS file isolation |
 | `scripts/test-scenario3-isolation.mjs` | — | Provider-aware sudo / UID isolation probe |
-| `scripts/run-all-tests.ps1 -Provider e2b\|daytona` | all | End-to-end summary |
+| `scripts/run-all-tests.ps1 -Provider e2b\|daytona\|aio` | all | End-to-end summary |
 | `scripts/measure-e2b-resources.ps1` | — | `docker stats` for E2B-compatible sandboxes |
 | `scripts/bench-load-resources.ps1` | exclusive | 平均态 / 极限态 CPU·内存采样 |
 | `scripts/build-e2b-image.ps1` | — | Build `sandbox-dev/e2b-runtime` |
+| `scripts/build-aio-image.ps1` | — | Build `sandbox-dev/aio-runtime`（AIO + ocuser_*） |
 
 ### Run all (E2B-compatible)
 
@@ -60,6 +70,30 @@ docker exec local-redis-1 redis-cli FLUSHALL
 # .env: SANDBOX_PROVIDER=daytona + DAYTONA_API_KEY
 .\scripts\run-all-tests.ps1 -Provider daytona
 ```
+
+### Run all (AIO)
+
+```powershell
+.\scripts\build-aio-image.ps1
+# .env: SANDBOX_PROVIDER=aio, RUNTIME_BACKEND=aio, SANDBOX_CPU=1, SANDBOX_MEMORY_MIB=2048
+cd deploy\local
+docker compose up -d --build
+cd ..\..
+docker exec local-redis-1 redis-cli FLUSHALL
+.\scripts\run-all-tests.ps1 -Provider aio
+```
+
+## Test Results — AIO (2026-08-05, local Docker)
+
+Environment: Windows 11, Docker Desktop, `SANDBOX_PROVIDER=aio`, `RUNTIME_BACKEND=aio`, base image `enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:1.11.0`, derived image `sandbox-dev/aio-runtime:0.1.0`, `MAX_SANDBOX_CONCURRENCY=2`, default limits **1 vCPU / 2048 MiB** per sandbox.
+
+| 场景 | API | OS/目录隔离 |
+|------|-----|-------------|
+| 1 并发排队 | **PASS** | — |
+| 2 同用户多 session | **PASS** | **PASS** |
+| 3 跨用户拼车 | **PASS** | **PASS**（`ocuser_029` vs `ocuser_019`） |
+
+> 场景 1 出队后 AIO 容器启动较慢；`run-all-tests.ps1 -Provider aio` 默认 poll 最长 120s。测试前建议 `redis-cli FLUSHALL` 并确保 broker 空闲（`activeCount=0`）。
 
 ## Test Results — E2B-compatible (2026-07-24, local Docker)
 
@@ -153,6 +187,7 @@ Environment: Windows 11, Docker Desktop, Daytona self-hosted v0.190, Broker on N
 |----------|---------------------|------------------------|-----------|
 | Daytona（默认 snapshot） | 1 vCPU | 1 GiB | 容器（Daytona runner） |
 | E2B-compatible（本仓库） | **0.5 vCPU** | **512 MiB** | 容器（dockerode）；非 Firecracker |
+| AIO（agent-infra） | **1 vCPU**（建议） | **2048 MiB**（建议） | 容器 + AIO HTTP；含 browser 栈故更重 |
 
 Observed idle sandbox RSS:
 

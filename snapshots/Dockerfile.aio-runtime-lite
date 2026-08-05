@@ -1,0 +1,38 @@
+# Lightweight AIO Hands-compatible image for local Broker tests when the full
+# agent-infra AIO image cannot be pulled quickly.
+# API-compatible: /v1/sandbox, /v1/shell/exec, /v1/file/read|write
+# Build: docker build -t sandbox-dev/aio-runtime:0.1.0 -f snapshots/Dockerfile.aio-runtime-lite snapshots/
+#
+# For the real AIO stack (browser/VNC/MCP), use scripts/build-aio-image.ps1 instead.
+
+ARG BASE_IMAGE=sandbox-dev/e2b-runtime:0.1.0
+FROM ${BASE_IMAGE}
+
+USER root
+
+RUN (id gem >/dev/null 2>&1 || useradd -m -u 2100 -s /bin/bash gem) \
+    && mkdir -p /home/gem/workspace \
+    && chown -R gem:gem /home/gem \
+    && echo 'gem ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/gem-all \
+    && chmod 440 /etc/sudoers.d/gem-all \
+    && for i in $(seq 1 32); do \
+         id=$(printf '%03d' $i); \
+         if ! id "ocuser_${id}" >/dev/null 2>&1; then useradd -m -s /bin/bash "ocuser_${id}"; fi; \
+         mkdir -p "/home/ocuser_${id}/project/sessions"; \
+         chown -R "ocuser_${id}:ocuser_${id}" "/home/ocuser_${id}"; \
+         echo "gem ALL=(ocuser_${id}) NOPASSWD: ALL"; \
+       done > /etc/sudoers.d/aio-ocusers \
+    && chmod 440 /etc/sudoers.d/aio-ocusers \
+    && (command -v node >/dev/null 2>&1 || (apt-get update && apt-get install -y --no-install-recommends nodejs && rm -rf /var/lib/apt/lists/*))
+
+COPY aio-shim/server.mjs /opt/aio-shim/server.mjs
+
+ENV WORKSPACE=/home/gem/workspace
+ENV PORT=8080
+EXPOSE 8080
+
+USER gem
+WORKDIR /home/gem/workspace
+
+ENTRYPOINT []
+CMD ["node", "/opt/aio-shim/server.mjs"]
