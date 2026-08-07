@@ -2,5 +2,12 @@ node_modules/
 dist/
 .env
 .env.local
+.env*.secrets
+deploy/local/.env.demo.secrets
+deploy/local/.env.daytona-opencode
+deploy/local/.secrets/
+demo-output/
+snapshots/opencode-bin/
+scripts/probe-*.mjs
 *.log
 .DS_Store

@@ -105,7 +105,13 @@ services:
       MAX_SANDBOX_CONCURRENCY: ${MAX_SANDBOX_CONCURRENCY:-2}
       IDLE_POLICY: ${IDLE_POLICY:-stop_keep}
       DEFAULT_BROKER_MODE: ${DEFAULT_BROKER_MODE:-exclusive}
+      PROJECT_BASE_PATH: ${PROJECT_BASE_PATH:-}
       JWT_SECRET: ${JWT_SECRET:-local-dev-secret}
+      OPENCODE_SERVICE_ENABLED: ${OPENCODE_SERVICE_ENABLED:-false}
+      OPENCODE_SERVICE_COMMAND: ${OPENCODE_SERVICE_COMMAND:-opencode serve --hostname 0.0.0.0 --port 4096}
+      OPENCODE_SERVICE_PORT: ${OPENCODE_SERVICE_PORT:-4096}
+      OPENCODE_SERVICE_PASSWORD: ${OPENCODE_SERVICE_PASSWORD:-}
+      OPENCODE_SERVICE_READY_TIMEOUT_MS: ${OPENCODE_SERVICE_READY_TIMEOUT_MS:-60000}
       LEASE_TTL_MS: ${LEASE_TTL_MS:-120000}
       LEASE_SWEEP_INTERVAL_MS: ${LEASE_SWEEP_INTERVAL_MS:-30000}
     depends_on:
@@ -117,6 +123,15 @@ services:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      # Daytona signed preview hosts resolve to the Docker host, not the broker container loopback.
+      - "proxy.localhost:host-gateway"
+    # Daytona SDK toolbox uses 127.0.0.1:4000; forward it to the host-published proxy.
+    command:
+      [
+        "sh",
+        "-c",
+        "node /app/packages/broker/scripts/daytona-proxy-forward.mjs & exec node dist/index.js",
+      ]
 
 networks:
   aio:

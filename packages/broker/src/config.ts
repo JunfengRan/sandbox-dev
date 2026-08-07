@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type {
   BrokerMode,
   IdlePolicy,
@@ -37,7 +40,15 @@ export interface Config {
   sizeProfile: SandboxSizeProfile
   defaultResources: SandboxResources
   defaultProcessLimits?: ProcessLimits
+  opencodeServiceEnabled: boolean
+  opencodeServiceCommand: string
+  opencodeServicePort: number
+  opencodeServicePassword: string
+  opencodeServiceReadyTimeoutMs: number
+  /** Extra env injected into sandbox `opencode serve` (e.g. DEEPSEEK_API_KEY). */
+  opencodeServiceEnv: Record<string, string>
 }
+
 
 function resolveResources(): { profile: SandboxSizeProfile; resources: SandboxResources } {
   const profile = (process.env.SANDBOX_SIZE_PROFILE ?? 'small') as SandboxSizeProfile
@@ -107,11 +118,35 @@ export function loadConfig(): Config {
     jwtSecret: process.env.JWT_SECRET,
     defaultPoolId: process.env.DEFAULT_POOL_ID ?? 'default',
     snapshot: process.env.DAYTONA_SNAPSHOT,
-    projectBasePath: process.env.PROJECT_BASE_PATH ?? PROJECT_BASE_PATH[sandboxProvider],
+    projectBasePath: process.env.PROJECT_BASE_PATH || PROJECT_BASE_PATH[sandboxProvider],
     leaseTtlMs: Number(process.env.LEASE_TTL_MS ?? 120_000),
     leaseSweepIntervalMs: Number(process.env.LEASE_SWEEP_INTERVAL_MS ?? 30_000),
     sizeProfile: profile,
     defaultResources: resources,
     defaultProcessLimits: resolveProcessLimits(),
+    opencodeServiceEnabled: process.env.OPENCODE_SERVICE_ENABLED === 'true',
+    opencodeServiceCommand:
+      process.env.OPENCODE_SERVICE_COMMAND ?? 'opencode serve --hostname 0.0.0.0 --port 4096',
+    opencodeServicePort: Number(process.env.OPENCODE_SERVICE_PORT ?? 4096),
+    opencodeServicePassword: process.env.OPENCODE_SERVICE_PASSWORD ?? '',
+    opencodeServiceReadyTimeoutMs: Number(process.env.OPENCODE_SERVICE_READY_TIMEOUT_MS ?? 60_000),
+    opencodeServiceEnv: resolveOpenCodeServiceEnv(),
   }
 }
+
+function resolveOpenCodeServiceEnv(): Record<string, string> {
+  const env: Record<string, string> = {}
+  if (process.env.DEEPSEEK_API_KEY?.trim()) env.DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY.trim()
+  if (process.env.OPENCODE_CONFIG_CONTENT?.trim()) {
+    env.OPENCODE_CONFIG_CONTENT = process.env.OPENCODE_CONFIG_CONTENT
+    return env
+  }
+  const configPath =
+    process.env.OPENCODE_DEMO_CONFIG_PATH?.trim() ||
+    join(dirname(fileURLToPath(import.meta.url)), '../../../deploy/local/opencode.demo.json')
+  if (process.env.OPENCODE_DEMO_CONFIG === 'true' && existsSync(configPath)) {
+    env.OPENCODE_CONFIG_CONTENT = readFileSync(configPath, 'utf8')
+  }
+  return env
+}
+

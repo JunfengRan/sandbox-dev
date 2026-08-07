@@ -1,0 +1,9 @@
+# Daytona OpenCode snapshot reuses the already-built E2B OpenCode runtime image
+# (Alpine + pinned opencode 1.18.13). Do NOT re-download from GitHub during build.
+#
+#   docker tag sandbox-dev/opencode-runtime:1.18.13 localhost:6000/daytona/sandbox-dev-opencode:1.18.13
+#   docker push localhost:6000/daytona/sandbox-dev-opencode:1.18.13
+#   Then register snapshot name sandbox-dev-opencode in Daytona.
+#
+ARG OPENCODE_RUNTIME=sandbox-dev/opencode-runtime:1.18.13
+FROM ${OPENCODE_RUNTIME}

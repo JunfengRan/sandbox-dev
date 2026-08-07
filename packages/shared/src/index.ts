@@ -1,3 +1,13 @@
+export {
+  ApiError,
+  createApiError,
+  newErrorRef,
+  redactSecrets,
+  sanitizeCauseChain,
+  toPublicErrorBody,
+} from './errors.js'
+export type { PublicErrorBody, PublicErrorCause } from './errors.js'
+
 export type BrokerMode = 'exclusive' | 'user_shared' | 'multi_user_shared'
 
 export type IdlePolicy = 'stop_keep' | 'delete' | 'pool'
@@ -130,6 +140,36 @@ export interface ExecOptions {
   processLimits?: ProcessLimits
 }
 
+export type SandboxServiceState = 'starting' | 'ready' | 'stopped' | 'failed'
+
+export interface SandboxServiceSpec {
+  name: string
+  command: string
+  port: number
+  cwd?: string
+  env?: Record<string, string>
+  healthPath?: string
+  healthHeaders?: Record<string, string>
+  readinessTimeoutMs?: number
+}
+
+/**
+ * Upstream endpoint for Broker/Gateway use. This is provider-internal routing
+ * data and must never be exposed as the public client endpoint contract.
+ */
+export interface SandboxServiceEndpoint {
+  url: string
+  scope: 'provider-internal'
+  headers?: Record<string, string>
+  expiresAt?: number
+}
+
+export interface SandboxService {
+  name: string
+  state: SandboxServiceState
+  endpoint?: SandboxServiceEndpoint
+}
+
 /**
  * Provider-agnostic sandbox lifecycle used by the Broker (Hands / compute plane).
  * Aligns with Claude Managed Agents self-hosted worker + OpenAI SandboxClient shapes
@@ -146,6 +186,9 @@ export interface SandboxProvider {
   resize(id: string, resources: SandboxResources): Promise<SandboxInfo>
   exec(id: string, command: string, opts?: ExecOptions): Promise<ExecResult>
   ensureWorkDir(id: string, workDir: string): Promise<void>
+  startService(id: string, spec: SandboxServiceSpec): Promise<SandboxService>
+  getServiceEndpoint(id: string, name: string): Promise<SandboxServiceEndpoint>
+  stopService(id: string, name: string): Promise<SandboxService>
   setupMultiUserDirs?(id: string, workDir: string): Promise<void>
 }
 

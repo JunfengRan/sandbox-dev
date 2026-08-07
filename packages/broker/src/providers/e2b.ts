@@ -6,6 +6,9 @@ import {
   type SandboxInfo,
   type SandboxProvider,
   type SandboxResources,
+  type SandboxService,
+  type SandboxServiceEndpoint,
+  type SandboxServiceSpec,
 } from '@sandbox-dev/shared'
 import type { Config } from '../config.js'
 
@@ -98,6 +101,29 @@ export class E2BSandboxProvider implements SandboxProvider {
 
   async ensureWorkDir(id: string, workDir: string): Promise<void> {
     await this.exec(id, `mkdir -p ${workDir}`)
+  }
+
+  async startService(id: string, spec: SandboxServiceSpec): Promise<SandboxService> {
+    const res = await this.request(`/v1/sandboxes/${encodeURIComponent(id)}/services`, {
+      method: 'POST',
+      body: JSON.stringify(spec),
+    })
+    return (await res.json()) as SandboxService
+  }
+
+  async getServiceEndpoint(id: string, name: string): Promise<SandboxServiceEndpoint> {
+    const res = await this.request(
+      `/v1/sandboxes/${encodeURIComponent(id)}/services/${encodeURIComponent(name)}/endpoint`,
+    )
+    return (await res.json()) as SandboxServiceEndpoint
+  }
+
+  async stopService(id: string, name: string): Promise<SandboxService> {
+    const res = await this.request(
+      `/v1/sandboxes/${encodeURIComponent(id)}/services/${encodeURIComponent(name)}`,
+      { method: 'DELETE' },
+    )
+    return (await res.json()) as SandboxService
   }
 
   async setupMultiUserDirs(id: string, workDir: string): Promise<void> {

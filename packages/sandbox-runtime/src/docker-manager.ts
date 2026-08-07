@@ -1,6 +1,11 @@
 import { PassThrough } from 'node:stream'
 import Docker from 'dockerode'
 import { v4 as uuidv4 } from 'uuid'
+import type {
+  SandboxService,
+  SandboxServiceEndpoint,
+  SandboxServiceSpec,
+} from '@sandbox-dev/shared'
 import { aioExec, aioReadFile, aioWriteFile, waitForAioReady } from './aio-client.js'
 
 export type SandboxState = 'creating' | 'started' | 'stopped' | 'archived'
@@ -49,6 +54,7 @@ function mapDockerState(status?: string): SandboxState {
 export class DockerSandboxManager {
   private readonly docker: Docker
   private readonly meta = new Map<string, SandboxRecord>()
+  private readonly services = new Map<string, SandboxService>()
 
   constructor(
     private readonly defaultImage: string,
@@ -88,6 +94,7 @@ export class DockerSandboxManager {
     }
 
     await this.ensureImage(image)
+    await this.ensureNetwork(this.dockerNetwork)
 
     const container = await this.docker.createContainer({
       Image: image,
@@ -99,6 +106,7 @@ export class DockerSandboxManager {
         NanoCpus: Math.round(cpu * 1e9),
         Memory: memoryMiB * 1024 * 1024,
         AutoRemove: false,
+        NetworkMode: sandboxNetwork('e2b', this.dockerNetwork),
       },
       Tty: false,
       OpenStdin: false,
@@ -253,6 +261,9 @@ export class DockerSandboxManager {
       if (!msg.includes('No such container') && !msg.includes('404')) throw err
     }
     this.meta.delete(id)
+    for (const key of this.services.keys()) {
+      if (key.startsWith(`${id}:`)) this.services.delete(key)
+    }
   }
 
   async exec(id: string, opts: ExecOptions): Promise<ExecResult> {
@@ -289,6 +300,63 @@ export class DockerSandboxManager {
       stdout,
       stderr,
     }
+  }
+
+  async startService(id: string, spec: SandboxServiceSpec): Promise<SandboxService> {
+    const record = await this.get(id)
+    if (record.state !== 'started') await this.start(id)
+    const endpoint = {
+      url: await this.resolveContainerEndpoint(record.containerId, spec.port),
+      scope: 'provider-internal' as const,
+    }
+    const service: SandboxService = { name: spec.name, state: 'starting', endpoint }
+    this.services.set(this.serviceKey(id, spec.name), service)
+
+    const result = await this.exec(id, {
+      command: makeServiceStartCommand(spec),
+      cwd: spec.cwd ?? record.workDir,
+    })
+    if (result.exitCode !== 0) {
+      this.services.delete(this.serviceKey(id, spec.name))
+      throw new Error(result.stderr || `Failed to start service ${spec.name}`)
+    }
+
+    try {
+      await waitForServiceReady(
+        endpoint.url,
+        spec.healthPath ?? '/',
+        spec.readinessTimeoutMs ?? 30_000,
+        fetch,
+        100,
+        spec.healthHeaders,
+      )
+      service.state = 'ready'
+      return service
+    } catch (error) {
+      await this.stopService(id, spec.name).catch(() => undefined)
+      throw error
+    }
+  }
+
+  async getServiceEndpoint(id: string, name: string): Promise<SandboxServiceEndpoint> {
+    const service = this.services.get(this.serviceKey(id, name))
+    if (!service?.endpoint || service.state === 'stopped') {
+      throw Object.assign(new Error(`Service not found: ${name}`), { status: 404 })
+    }
+    return service.endpoint
+  }
+
+  async stopService(id: string, name: string): Promise<SandboxService> {
+    const key = this.serviceKey(id, name)
+    const service = this.services.get(key)
+    if (!service) throw Object.assign(new Error(`Service not found: ${name}`), { status: 404 })
+    const pidFile = `/tmp/sandbox-dev-services/${name}.pid`
+    await this.exec(id, {
+      command: `if [ -f ${shellEscape(pidFile)} ]; then kill "$(cat ${shellEscape(pidFile)})" 2>/dev/null || true; rm -f ${shellEscape(pidFile)}; fi`,
+    })
+    const stopped: SandboxService = { name, state: 'stopped' }
+    this.services.delete(key)
+    return stopped
   }
 
   async readFile(id: string, path: string): Promise<string> {
@@ -341,6 +409,10 @@ export class DockerSandboxManager {
   }
 
   private async resolveEndpoint(containerId: string): Promise<string> {
+    return this.resolveContainerEndpoint(containerId, 8080)
+  }
+
+  private async resolveContainerEndpoint(containerId: string, port: number): Promise<string> {
     const info = await this.docker.getContainer(containerId).inspect()
     const networks = info.NetworkSettings?.Networks ?? {}
     const preferred = networks[this.dockerNetwork]
@@ -351,7 +423,11 @@ export class DockerSandboxManager {
     if (!ip) {
       throw new Error(`AIO sandbox container ${containerId} has no IP on network ${this.dockerNetwork}`)
     }
-    return `http://${ip}:8080`
+    return `http://${ip}:${port}`
+  }
+
+  private serviceKey(id: string, name: string): string {
+    return `${id}:${name}`
   }
 
   private async ensureImage(image: string): Promise<void> {
@@ -404,6 +480,48 @@ export class DockerSandboxManager {
     this.meta.set(id, record)
     return record
   }
+}
+
+export async function waitForServiceReady(
+  baseUrl: string,
+  healthPath: string,
+  timeoutMs: number,
+  request: typeof fetch = fetch,
+  retryIntervalMs = 100,
+  headers?: Record<string, string>,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  let lastError = ''
+  while (Date.now() < deadline) {
+    try {
+      const signal = AbortSignal.timeout(Math.max(1, Math.min(1000, deadline - Date.now())))
+      const response = await request(`${baseUrl.replace(/\/$/, '')}${healthPath}`, { headers, signal })
+      if (response.ok) return
+      lastError = `HTTP ${response.status}`
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+    }
+    await new Promise((resolve) => setTimeout(resolve, Math.min(retryIntervalMs, timeoutMs)))
+  }
+  throw new Error(`Service readiness timed out after ${timeoutMs}ms: ${lastError}`)
+}
+
+export function makeServiceStartCommand(spec: SandboxServiceSpec): string {
+  const directory = '/tmp/sandbox-dev-services'
+  const pidFile = `${directory}/${spec.name}.pid`
+  const logFile = `${directory}/${spec.name}.log`
+  const environment = Object.entries(spec.env ?? {})
+    .map(([key, value]) => `${key}=${shellEscape(value)}`)
+    .join(' ')
+  return [
+    `mkdir -p ${shellEscape(directory)}`,
+    `if [ -f ${shellEscape(pidFile)} ] && kill -0 "$(cat ${shellEscape(pidFile)})" 2>/dev/null; then exit 0; fi`,
+    `nohup env${environment ? ` ${environment}` : ''} bash -lc ${shellEscape(spec.command)} >${shellEscape(logFile)} 2>&1 </dev/null & echo $! > ${shellEscape(pidFile)}`,
+  ].join('; ')
+}
+
+export function sandboxNetwork(_backend: RuntimeBackend, configuredNetwork: string): string {
+  return configuredNetwork
 }
 
 function shellEscape(value: string): string {

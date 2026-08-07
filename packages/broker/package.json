@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "tsx --test test/**/*.test.ts"
   },
   "dependencies": {
     "@daytona/sdk": "^0.163.0",

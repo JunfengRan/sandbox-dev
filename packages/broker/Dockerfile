@@ -1,11 +1,12 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json ./
+COPY package-lock.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/broker/package.json ./packages/broker/
+RUN --mount=type=cache,target=/root/.npm npm ci --workspace=@sandbox-dev/shared --workspace=@sandbox-dev/broker
 COPY packages/shared ./packages/shared
 COPY packages/broker ./packages/broker
-RUN npm install --workspace=@sandbox-dev/shared --workspace=@sandbox-dev/broker
 RUN npm run build -w @sandbox-dev/shared && npm run build -w @sandbox-dev/broker
 
 FROM node:20-alpine

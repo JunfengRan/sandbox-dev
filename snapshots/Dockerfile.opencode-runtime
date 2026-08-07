@@ -1,0 +1,20 @@
+ARG OPENCODE_IMAGE=ghcr.io/anomalyco/opencode@sha256:246ebd75d25380cde481b7507d38ed01ce813d541eb4c7412a25ba7d9bd1abe7
+FROM ${OPENCODE_IMAGE}
+
+ARG OPENCODE_VERSION=1.18.13
+
+USER root
+
+RUN apk add --no-cache bash curl git openssh-client ripgrep sudo \
+    && (id user >/dev/null 2>&1 || adduser -D -u 2000 -s /bin/bash user) \
+    && mkdir -p /home/user/project \
+    && chown -R user:user /home/user \
+    && echo 'user ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/user-all \
+    && chmod 440 /etc/sudoers.d/user-all \
+    && test "$(opencode --version)" = "${OPENCODE_VERSION}"
+
+USER user
+WORKDIR /home/user/project
+
+ENTRYPOINT []
+CMD ["sleep", "infinity"]

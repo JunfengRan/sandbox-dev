@@ -7,7 +7,7 @@ import type {
   SandboxResources,
   SandboxSizeProfile,
 } from '@sandbox-dev/shared'
-import { SIZE_PROFILES } from '@sandbox-dev/shared'
+import { SIZE_PROFILES, createApiError } from '@sandbox-dev/shared'
 import { v4 as uuidv4 } from 'uuid'
 import type { Config } from '../config.js'
 import { buildIsolation, type LeaseManager, type LeaseRecord, type TicketRecord } from '../state/lease-manager.js'
@@ -24,6 +24,14 @@ export class BrokerService {
   async acquire(req: AcquireRequest): Promise<AcquireResponse> {
     const mode = req.mode ?? this.config.defaultMode
     const poolId = req.poolId ?? this.config.defaultPoolId
+    if (this.config.opencodeServiceEnabled && mode !== 'exclusive') {
+      throw apiError(
+        400,
+        'SANDBOX.UNSUPPORTED_MODE',
+        'OpenCode workspaces require exclusive sandbox mode',
+        false,
+      )
+    }
 
     const existing = await this.leases.getLease(req.userId, req.sessionId)
     if (existing) {
@@ -89,9 +97,10 @@ export class BrokerService {
     return { status: 'queued', ticketId, queuePosition, provider: this.provider.name }
   }
 
-  async poll(ticketId: string) {
+  async poll(userId: string, ticketId: string) {
     const ticket = await this.leases.getTicket(ticketId)
     if (!ticket) return { status: 'released' as const }
+    if (ticket.userId !== userId) throw forbidden('Queue ticket does not belong to the authenticated user')
     if (ticket.status === 'ready' && ticket.sandboxId) {
       return {
         status: 'ready' as const,
@@ -148,16 +157,35 @@ export class BrokerService {
     return true
   }
 
-  async resizeSandbox(sandboxId: string, resources: SandboxResources) {
+  async resizeSandbox(userId: string, sandboxId: string, resources: SandboxResources) {
+    await this.requireOwnedSandbox(userId, sandboxId)
     return this.provider.resize(sandboxId, resources)
   }
 
-  async execInSandbox(sandboxId: string, command: string, cwd?: string) {
+  async execInSandbox(userId: string, sandboxId: string, command: string, cwd?: string) {
+    await this.requireOwnedSandbox(userId, sandboxId)
     return this.provider.exec(sandboxId, command, { cwd })
   }
 
-  async status() {
-    const leases = await this.leases.listLeases()
+  async getOpenCodeEndpoint(userId: string, sessionId: string) {
+    const lease = await this.leases.getLease(userId, sessionId)
+    if (!lease) throw apiError(404, 'SANDBOX.LEASE_NOT_FOUND', 'Workspace lease not found', false)
+    if (!this.config.opencodeServiceEnabled) {
+      throw apiError(503, 'SANDBOX.SERVICE_DISABLED', 'OpenCode service is disabled', false)
+    }
+    if (!this.provider.getServiceEndpoint) {
+      throw apiError(503, 'SANDBOX.SERVICE_UNSUPPORTED', 'Provider does not support service endpoints', false)
+    }
+    const endpoint = await this.provider.getServiceEndpoint(lease.sandboxId, 'opencode')
+    return {
+      url: endpoint.url,
+      authorization: `Basic ${Buffer.from(`opencode:${this.config.opencodeServicePassword}`).toString('base64')}`,
+      headers: endpoint.headers,
+    }
+  }
+
+  async status(userId: string) {
+    const leases = (await this.leases.listLeases()).filter((lease) => lease.userId === userId)
     return {
       activeCount: await this.leases.getActiveCount(),
       maxConcurrency: this.config.maxConcurrency,
@@ -167,7 +195,6 @@ export class BrokerService {
       defaultResources: this.config.defaultResources,
       processLimits: this.config.defaultProcessLimits ?? null,
       leases: leases.map((l) => ({
-        userId: l.userId,
         sessionId: l.sessionId,
         sandboxId: l.sandboxId,
         acquiredAt: l.acquiredAt,
@@ -301,6 +328,9 @@ export class BrokerService {
     if (mode === 'multi_user_shared' && this.provider.setupMultiUserDirs) {
       await this.provider.setupMultiUserDirs(sandboxId, isolation.workDir)
     }
+    if (this.config.opencodeServiceEnabled) {
+      await this.ensureOpenCodeService(sandboxId, isolation.workDir)
+    }
 
     const lease: LeaseRecord = {
       userId,
@@ -330,6 +360,50 @@ export class BrokerService {
     }
   }
 
+  private async requireOwnedSandbox(userId: string, sandboxId: string) {
+    const owned = (await this.leases.listLeases()).some(
+      (lease) => lease.userId === userId && lease.sandboxId === sandboxId,
+    )
+    if (!owned) throw forbidden('Sandbox does not belong to the authenticated user')
+  }
+
+  private async ensureOpenCodeService(sandboxId: string, workDir: string) {
+    if (!this.config.opencodeServicePassword) {
+      throw apiError(
+        500,
+        'CONFIG.OPENCODE_PASSWORD_REQUIRED',
+        'OPENCODE_SERVICE_PASSWORD is required',
+        false,
+      )
+    }
+    if (!this.provider.startService) {
+      throw apiError(
+        503,
+        'SANDBOX.SERVICE_UNSUPPORTED',
+        'Provider does not support managed services',
+        false,
+      )
+    }
+    const authorization = `Basic ${Buffer.from(`opencode:${this.config.opencodeServicePassword}`).toString('base64')}`
+    try {
+      await this.provider.startService(sandboxId, {
+        name: 'opencode',
+        command: this.config.opencodeServiceCommand,
+        port: this.config.opencodeServicePort,
+        cwd: workDir,
+        env: {
+          OPENCODE_SERVER_PASSWORD: this.config.opencodeServicePassword,
+          ...this.config.opencodeServiceEnv,
+        },
+        healthPath: '/api/health',
+        healthHeaders: { authorization },
+        readinessTimeoutMs: this.config.opencodeServiceReadyTimeoutMs,
+      })
+    } catch (error) {
+      throw apiError(502, 'SANDBOX.START_FAILED', 'Failed to start OpenCode service', true, error)
+    }
+  }
+
   private toAcquireResponse(lease: LeaseRecord): AcquireResponse {
     return {
       status: 'granted',
@@ -341,4 +415,12 @@ export class BrokerService {
       isolation: lease.isolation,
     }
   }
+}
+
+function forbidden(message: string) {
+  return createApiError(403, 'AUTH.FORBIDDEN', message, false)
+}
+
+function apiError(status: number, code: string, message: string, retryable: boolean, cause?: unknown) {
+  return createApiError(status, code, message, retryable, cause)
 }
